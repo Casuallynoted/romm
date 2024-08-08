@@ -122,18 +122,14 @@ def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSch
 
     files: list[Rom] = db_rom_handler.get_roms(platform_id=switch.id)
 
-    return TinfoilFeedSchema(
-        files=[
-            TinfoilFeedFileSchema(
-                url=str(
-                    request.url_for(
-                        "get_rom_content", id=file.id, file_name=file.file_name
-                    )
-                ),
-                size=file.file_size_bytes,
-            )
+    return {
+        "files": [
+            {
+                "url": f"../../roms/{file.id}/content/{file.file_name}",
+                "size": file.file_size_bytes,
+            }
             for file in files
         ],
-        directories=[],
-        success="RomM Switch Library",
-    )
+        "directories": [],
+        "success": TINFOIL_WELCOME_MESSAGE,
+    }
