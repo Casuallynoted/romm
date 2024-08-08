@@ -1,6 +1,6 @@
 import router from "@/plugins/router";
 import axios from "axios";
-import { default as Cookies } from "js-cookie";
+import { default as cookie, default as Cookies } from "js-cookie";
 import { debounce } from "lodash";
 
 const api = axios.create({ baseURL: "/api", timeout: 120000 });
@@ -19,7 +19,7 @@ api.interceptors.request.use((config) => {
   networkQuiesced.cancel();
 
   // Set CSRF header for all requests
-  config.headers["x-csrftoken"] = Cookies.get("romm_csrftoken");
+  config.headers["x-csrftoken"] = cookie.get("csrftoken");
   return config;
 });
 
@@ -35,22 +35,15 @@ api.interceptors.response.use(
 
     return response;
   },
-  async (error) => {
+  (error) => {
     if (error.response?.status === 403) {
-      // Clear cookies and redirect to login page
-      Cookies.remove("romm_session");
-
-      // Refetch CSRF cookie
-      await refetchCSRFToken();
-
-      const pathname = window.location.pathname;
-      const params = new URLSearchParams(window.location.search);
-
+      const allCookies = Cookies.get(); // Get all cookies
+      for (const cookie in allCookies) {
+        Cookies.remove(cookie); // Remove each cookie
+      }
       router.push({
         name: "login",
-        query: {
-          next: params.get("next") ?? (pathname !== "/login" ? pathname : "/"),
-        },
+        query: { next: router.currentRoute.value.path },
       });
     }
     return Promise.reject(error);
@@ -58,9 +51,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
-export async function refetchCSRFToken() {
-  Cookies.remove("romm_csrftoken");
-
-  return await api.get("/heartbeat");
-}

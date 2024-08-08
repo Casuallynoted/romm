@@ -1,17 +1,18 @@
 import functools
 import re
+import sys
 import time
 from typing import Final, NotRequired
 
-import httpx
 import pydash
-from config import IGDB_CLIENT_ID, IGDB_CLIENT_SECRET, IS_PYTEST_RUN
+import requests
+from config import IGDB_CLIENT_ID, IGDB_CLIENT_SECRET
 from fastapi import HTTPException, status
-from handler.redis_handler import sync_cache
+from handler.redis_handler import cache
 from logger.logger import log
+from requests.exceptions import HTTPError, Timeout
 from typing_extensions import TypedDict
 from unidecode import unidecode as uc
-from utils.context import ctx_httpx_client
 
 from .base_hander import (
     PS2_OPL_REGEX,
@@ -190,38 +191,39 @@ class IGDBBaseHandler(MetadataHandler):
         self.twitch_auth = TwitchAuth()
         self.headers = {
             "Client-ID": IGDB_CLIENT_ID,
+            "Authorization": f"Bearer {self.twitch_auth.get_oauth_token()}",
             "Accept": "application/json",
         }
 
     @staticmethod
     def check_twitch_token(func):
         @functools.wraps(func)
-        async def wrapper(*args):
-            token = await args[0].twitch_auth.get_oauth_token()
-            args[0].headers["Authorization"] = f"Bearer {token}"
-            return await func(*args)
+        def wrapper(*args):
+            args[0].headers[
+                "Authorization"
+            ] = f"Bearer {args[0].twitch_auth.get_oauth_token()}"
+            return func(*args)
 
         return wrapper
 
-    async def _request(self, url: str, data: str, timeout: int = 120) -> list:
-        httpx_client = ctx_httpx_client.get()
+    def _request(self, url: str, data: str, timeout: int = 120) -> list:
         try:
-            res = await httpx_client.post(
+            res = requests.post(
                 url,
-                content=f"{data} limit {self.pagination_limit};",
+                f"{data} limit {self.pagination_limit};",
                 headers=self.headers,
                 timeout=timeout,
             )
 
             res.raise_for_status()
             return res.json()
-        except httpx.NetworkError as exc:
+        except requests.exceptions.ConnectionError as exc:
             log.critical("Connection error: can't connect to IGDB", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Can't connect to IGDB, check your internet connection",
             ) from exc
-        except httpx.HTTPStatusError as err:
+        except HTTPError as err:
             # Retry once if the auth token is invalid
             if err.response.status_code != 401:
                 log.error(err)
@@ -229,28 +231,28 @@ class IGDBBaseHandler(MetadataHandler):
 
             # Attempt to force a token refresh if the token is invalid
             log.warning("Twitch token invalid: fetching a new one...")
-            token = await self.twitch_auth._update_twitch_token()
+            token = self.twitch_auth._update_twitch_token()
             self.headers["Authorization"] = f"Bearer {token}"
-        except httpx.TimeoutException:
+        except Timeout:
             # Retry once the request if it times out
             pass
 
         try:
-            res = await httpx_client.post(
+            res = requests.post(
                 url,
-                content=f"{data} limit {self.pagination_limit};",
+                f"{data} limit {self.pagination_limit};",
                 headers=self.headers,
                 timeout=timeout,
             )
             res.raise_for_status()
-        except httpx.HTTPError as err:
+        except (HTTPError, Timeout) as err:
             # Log the error and return an empty list if the request fails again
             log.error(err)
             return []
 
         return res.json()
 
-    async def _search_rom(
+    def _search_rom(
         self, search_term: str, platform_igdb_id: int, with_category: bool = False
     ) -> dict | None:
         if not platform_igdb_id:
@@ -262,9 +264,26 @@ class IGDBBaseHandler(MetadataHandler):
             if with_category
             else ""
         )
+        roms = self._request(
+            self.games_endpoint,
+            data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}] {category_filter};',
+        )
+        roms_expanded = self._request(
+            self.search_endpoint,
+            data=f'fields {",".join(self.search_fields)}; where game.platforms=[{platform_igdb_id}] & (name ~ *"{search_term}"* | alternative_name ~ *"{search_term}"*);',
+        )
+        if roms_expanded:
+            roms.extend(
+                self._request(
+                    self.games_endpoint,
+                    f'fields {",".join(self.games_fields)}; where id={roms_expanded[0]["game"]["id"]};',
+                )
+            )
 
-        def is_exact_match(rom: dict, search_term: str) -> bool:
-            return (
+        exact_matches = [
+            rom
+            for rom in roms
+            if (
                 rom["name"].lower() == search_term.lower()
                 or rom["slug"].lower() == search_term.lower()
                 or (
@@ -272,40 +291,16 @@ class IGDBBaseHandler(MetadataHandler):
                     == self._normalize_exact_match(search_term)
                 )
             )
+        ]
 
-        roms = await self._request(
-            self.games_endpoint,
-            data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}] {category_filter};',
-        )
-        for rom in roms:
-            # Return early if an exact match is found.
-            if is_exact_match(rom, search_term):
-                return rom
-
-        roms_expanded = await self._request(
-            self.search_endpoint,
-            data=f'fields {",".join(self.search_fields)}; where game.platforms=[{platform_igdb_id}] & (name ~ *"{search_term}"* | alternative_name ~ *"{search_term}"*);',
-        )
-        if roms_expanded:
-            extra_roms = await self._request(
-                self.games_endpoint,
-                f'fields {",".join(self.games_fields)}; where id={roms_expanded[0]["game"]["id"]};',
-            )
-            for rom in extra_roms:
-                # Return early if an exact match is found.
-                if is_exact_match(rom, search_term):
-                    return rom
-
-            roms.extend(extra_roms)
-
-        return roms[0] if roms else None
+        return pydash.get(exact_matches or roms, "[0]", None)
 
     @check_twitch_token
-    async def get_platform(self, slug: str) -> IGDBPlatform:
+    def get_platform(self, slug: str) -> IGDBPlatform:
         if not IGDB_API_ENABLED:
             return IGDBPlatform(igdb_id=None, slug=slug)
 
-        platforms = await self._request(
+        platforms = self._request(
             self.platform_endpoint,
             data=f'fields {",".join(self.platforms_fields)}; where slug="{slug.lower()}";',
         )
@@ -319,7 +314,7 @@ class IGDBBaseHandler(MetadataHandler):
             )
 
         # Check if platform is a version if not found
-        platform_versions = await self._request(
+        platform_versions = self._request(
             self.platform_version_endpoint,
             data=f'fields {",".join(self.platforms_fields)}; where slug="{slug.lower()}";',
         )
@@ -403,21 +398,21 @@ class IGDBBaseHandler(MetadataHandler):
 
         search_term = self.normalize_search_term(search_term)
 
-        rom = await self._search_rom(search_term, platform_igdb_id, with_category=True)
-        if not rom:
-            rom = await self._search_rom(search_term, platform_igdb_id)
+        rom = self._search_rom(
+            search_term, platform_igdb_id, with_category=True
+        ) or self._search_rom(search_term, platform_igdb_id)
 
         # Split the search term since igdb struggles with colons
         if not rom and ":" in search_term:
             for term in search_term.split(":")[::-1]:
-                rom = await self._search_rom(term, platform_igdb_id)
+                rom = self._search_rom(term, platform_igdb_id)
                 if rom:
                     break
 
         # Some MAME games have two titles split by a slash
         if not rom and "/" in search_term:
             for term in search_term.split("/"):
-                rom = await self._search_rom(term.strip(), platform_igdb_id)
+                rom = self._search_rom(term.strip(), platform_igdb_id)
                 if rom:
                     break
 
@@ -442,11 +437,11 @@ class IGDBBaseHandler(MetadataHandler):
         )
 
     @check_twitch_token
-    async def get_rom_by_id(self, igdb_id: int) -> IGDBRom:
+    def get_rom_by_id(self, igdb_id: int) -> IGDBRom:
         if not IGDB_API_ENABLED:
             return IGDBRom(igdb_id=None)
 
-        roms = await self._request(
+        roms = self._request(
             self.games_endpoint,
             f'fields {",".join(self.games_fields)}; where id={igdb_id};',
         )
@@ -473,15 +468,15 @@ class IGDBBaseHandler(MetadataHandler):
         )
 
     @check_twitch_token
-    async def get_matched_roms_by_id(self, igdb_id: int) -> list[IGDBRom]:
+    def get_matched_roms_by_id(self, igdb_id: int) -> list[IGDBRom]:
         if not IGDB_API_ENABLED:
             return []
 
-        rom = await self.get_rom_by_id(igdb_id)
+        rom = self.get_rom_by_id(igdb_id)
         return [rom] if rom["igdb_id"] else []
 
     @check_twitch_token
-    async def get_matched_roms_by_name(
+    def get_matched_roms_by_name(
         self, search_term: str, platform_igdb_id: int
     ) -> list[IGDBRom]:
         if not IGDB_API_ENABLED:
@@ -491,12 +486,12 @@ class IGDBBaseHandler(MetadataHandler):
             return []
 
         search_term = uc(search_term)
-        matched_roms = await self._request(
+        matched_roms = self._request(
             self.games_endpoint,
             data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}];',
         )
 
-        alternative_matched_roms = await self._request(
+        alternative_matched_roms = self._request(
             self.search_endpoint,
             data=f'fields {",".join(self.search_fields)}; where game.platforms=[{platform_igdb_id}] & (name ~ *"{search_term}"* | alternative_name ~ *"{search_term}"*);',
         )
@@ -521,7 +516,7 @@ class IGDBBaseHandler(MetadataHandler):
                     )
                 )
             )
-            alternative_matched_roms = await self._request(
+            alternative_matched_roms = self._request(
                 self.games_endpoint,
                 f'fields {",".join(self.games_fields)}; where {id_filter};',
             )
@@ -565,16 +560,15 @@ class IGDBBaseHandler(MetadataHandler):
 
 
 class TwitchAuth:
-    async def _update_twitch_token(self) -> str:
+    def _update_twitch_token(self) -> str:
         token = None
         expires_in = 0
 
         if not IGDB_API_ENABLED:
             return ""
 
-        httpx_client = ctx_httpx_client.get()
         try:
-            res = await httpx_client.post(
+            res = requests.post(
                 url="https://id.twitch.tv/oauth2/token",
                 params={
                     "client_id": IGDB_CLIENT_ID,
@@ -587,11 +581,10 @@ class TwitchAuth:
             if res.status_code == 400:
                 log.critical("IGDB Error: Invalid IGDB_CLIENT_ID or IGDB_CLIENT_SECRET")
                 return ""
-
-            response_json = res.json()
-            token = response_json.get("access_token", "")
-            expires_in = response_json.get("expires_in", 0)
-        except httpx.NetworkError:
+            else:
+                token = res.json().get("access_token", "")
+                expires_in = res.json().get("expires_in", 0)
+        except requests.exceptions.ConnectionError:
             log.critical("Can't connect to IGDB, check your internet connection.")
             return ""
 
@@ -599,28 +592,28 @@ class TwitchAuth:
             return ""
 
         # Set token in redis to expire in <expires_in> seconds
-        sync_cache.set("romm:twitch_token", token, ex=expires_in - 10)
-        sync_cache.set("romm:twitch_token_expires_at", time.time() + expires_in - 10)
+        cache.set("romm:twitch_token", token, ex=expires_in - 10)  # type: ignore[attr-defined]
+        cache.set("romm:twitch_token_expires_at", time.time() + expires_in - 10)  # type: ignore[attr-defined]
 
         log.info("Twitch token fetched!")
 
         return token
 
-    async def get_oauth_token(self) -> str:
+    def get_oauth_token(self) -> str:
         # Use a fake token when running tests
-        if IS_PYTEST_RUN:
+        if "pytest" in sys.modules:
             return "test_token"
 
         if not IGDB_API_ENABLED:
             return ""
 
         # Fetch the token cache
-        token = sync_cache.get("romm:twitch_token")
-        token_expires_at = sync_cache.get("romm:twitch_token_expires_at")
+        token = cache.get("romm:twitch_token")  # type: ignore[attr-defined]
+        token_expires_at = cache.get("romm:twitch_token_expires_at")  # type: ignore[attr-defined]
 
         if not token or time.time() > float(token_expires_at or 0):
             log.warning("Twitch token invalid: fetching a new one...")
-            return await self._update_twitch_token()
+            return self._update_twitch_token()
 
         return token
 
@@ -847,7 +840,7 @@ IGDB_PLATFORM_LIST = [
     {"slug": "sinclair-zx81", "name": "Sinclair ZX81"},
     {"slug": "pc-8800-series", "name": "PC-8800 Series"},
     {"slug": "microvision--1", "name": "Microvision"},
-    {"slug": "g-and-w", "name": "Game & Watch"},
+    {"slug": "game-and-watch", "name": "Game & Watch"},
     {"slug": "atari8bit", "name": "Atari 8-bit"},
     {"slug": "trs-80-color-computer", "name": "TRS-80 Color Computer"},
     {

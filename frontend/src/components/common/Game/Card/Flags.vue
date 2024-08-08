@@ -39,10 +39,10 @@ const showSiblings = isNull(localStorage.getItem("settings.showSiblings"))
     </span>
   </v-chip>
   <v-chip
-    v-if="rom.sibling_roms && rom.sibling_roms.length > 0 && showSiblings"
+    v-if="rom.siblings && rom.siblings.length > 0 && showSiblings"
     class="translucent-dark mr-1 mt-1"
     density="compact"
   >
-    +{{ rom.sibling_roms.length }}
+    +{{ rom.siblings.length }}
   </v-chip>
 </template>
