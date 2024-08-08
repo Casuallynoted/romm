@@ -135,5 +135,5 @@ def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSch
             for file in files
         ],
         directories=[],
-        success="RomM Switch Library",
+        success=TINFOIL_WELCOME_MESSAGE,
     )
