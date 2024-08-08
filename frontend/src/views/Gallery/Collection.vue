@@ -83,28 +83,28 @@ async function fetchRoms() {
 }
 
 function setFilters() {
-  galleryFilterStore.setFilterGenres([
+  galleryFilterStore.setFilterGenre([
     ...new Set(
       romsStore.filteredRoms
         .flatMap((rom) => rom.genres.map((genre) => genre))
         .sort()
     ),
   ]);
-  galleryFilterStore.setFilterFranchises([
+  galleryFilterStore.setFilterFranchise([
     ...new Set(
       romsStore.filteredRoms
         .flatMap((rom) => rom.franchises.map((franchise) => franchise))
         .sort()
     ),
   ]);
-  galleryFilterStore.setFilterCompanies([
+  galleryFilterStore.setFilterCompany([
     ...new Set(
       romsStore.filteredRoms
         .flatMap((rom) => rom.companies.map((company) => company))
         .sort()
     ),
   ]);
-  galleryFilterStore.setFilterCollections([
+  galleryFilterStore.setFilterCollection([
     ...new Set(
       romsStore.filteredRoms
         .flatMap((rom) => rom.collections.map((collection) => collection))

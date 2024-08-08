@@ -1,19 +1,18 @@
+import sys
 from pathlib import Path
 from typing import Annotated
 
-from anyio import open_file
-from config import ASSETS_BASE_PATH, IS_PYTEST_RUN
+from config import ASSETS_BASE_PATH
 from decorators.auth import protected_route
 from endpoints.forms.identity import UserForm
 from endpoints.responses import MessageResponse
 from endpoints.responses.identity import UserSchema
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from handler.auth import auth_handler
 from handler.database import db_user_handler
 from handler.filesystem import fs_asset_handler
 from logger.logger import log
 from models.user import Role, User
-from utils.router import APIRouter
 
 router = APIRouter()
 
@@ -23,7 +22,7 @@ router = APIRouter()
     "/users",
     (
         []
-        if not IS_PYTEST_RUN and len(db_user_handler.get_admin_users()) == 0
+        if "pytest" not in sys.modules and len(db_user_handler.get_admin_users()) == 0
         else ["users.write"]
     ),
     status_code=status.HTTP_201_CREATED,
@@ -105,7 +104,7 @@ def get_user(request: Request, id: int) -> UserSchema:
 
 
 @protected_route(router.put, "/users/{id}", ["me.write"])
-async def update_user(
+def update_user(
     request: Request, id: int, form_data: Annotated[UserForm, Depends()]
 ) -> UserSchema:
     """Update user endpoint
@@ -167,10 +166,8 @@ async def update_user(
         Path(f"{ASSETS_BASE_PATH}/{user_avatar_path}").mkdir(
             parents=True, exist_ok=True
         )
-        async with await open_file(
-            f"{ASSETS_BASE_PATH}/{file_location}", "wb+"
-        ) as file_object:
-            await file_object.write(form_data.avatar.file.read())
+        with open(f"{ASSETS_BASE_PATH}/{file_location}", "wb+") as file_object:
+            file_object.write(form_data.avatar.file.read())
 
     if cleaned_data:
         db_user_handler.update_user(id, cleaned_data)

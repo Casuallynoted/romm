@@ -29,7 +29,7 @@ class DBPlatformsHandler(DBBaseHandler):
     @with_roms
     def add_platform(
         self, platform: Platform, query: Query = None, session: Session = None
-    ) -> Platform:
+    ) -> Platform | None:
         platform = session.merge(platform)
         session.flush()
 

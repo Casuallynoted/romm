@@ -31,7 +31,7 @@ function setFavourites() {
         'text-romm-white': !filterFavourites,
         'text-romm-accent-1': filterFavourites,
       }"
-      >Show favourites</span
+      >Filter favourites</span
     ></v-btn
   >
 </template>

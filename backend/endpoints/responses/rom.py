@@ -44,7 +44,7 @@ class RomUserSchema(BaseModel):
         from_attributes = True
 
     @classmethod
-    def for_user(cls, user_id: int, db_rom: Rom) -> RomUserSchema | None:
+    def for_user(cls, db_rom: Rom, user_id: int) -> RomUserSchema | None:
         for n in db_rom.rom_users:
             if n.user_id == user_id:
                 return cls.model_validate(n)
@@ -52,7 +52,7 @@ class RomUserSchema(BaseModel):
         return None
 
     @classmethod
-    def notes_for_user(cls, user_id: int, db_rom: Rom) -> list[UserNotesSchema]:
+    def notes_for_user(cls, db_rom: Rom, user_id: int) -> list[UserNotesSchema]:
         return [
             {
                 "user_id": n.user_id,
@@ -114,7 +114,6 @@ class RomSchema(BaseModel):
     updated_at: datetime
 
     rom_user: RomUserSchema | None = Field(default=None)
-    sibling_roms: list[RomSchema] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -124,10 +123,7 @@ class RomSchema(BaseModel):
         rom = cls.model_validate(db_rom)
         user_id = request.user.id
 
-        rom.rom_user = RomUserSchema.for_user(user_id, db_rom)
-        rom.sibling_roms = [
-            RomSchema.model_validate(r) for r in db_rom.get_sibling_roms()
-        ]
+        rom.rom_user = RomUserSchema.for_user(db_rom, user_id)
 
         return rom
 
@@ -159,8 +155,8 @@ class DetailedRomSchema(RomSchema):
         rom = cls.model_validate(db_rom)
         user_id = request.user.id
 
-        rom.rom_user = RomUserSchema.for_user(user_id, db_rom)
-        rom.user_notes = RomUserSchema.notes_for_user(user_id, db_rom)
+        rom.rom_user = RomUserSchema.for_user(db_rom, user_id)
+        rom.user_notes = RomUserSchema.notes_for_user(db_rom, user_id)
         rom.sibling_roms = [
             RomSchema.model_validate(r) for r in db_rom.get_sibling_roms()
         ]
@@ -175,9 +171,9 @@ class DetailedRomSchema(RomSchema):
             for s in db_rom.screenshots
             if s.user_id == user_id
         ]
-        rom.user_collections = CollectionSchema.for_user(
-            user_id, db_rom.get_collections()
-        )
+        rom.user_collections = [
+            CollectionSchema.model_validate(c) for c in db_rom.get_collections(user_id)
+        ]
 
         return rom
 

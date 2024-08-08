@@ -1,16 +1,11 @@
-import pytest
 from fastapi.testclient import TestClient
 from main import app
 
-
-@pytest.fixture
-def client():
-    with TestClient(app) as client:
-        yield client
+client = TestClient(app)
 
 
-def test_config(client):
-    response = client.get("/api/config")
+def test_config():
+    response = client.get("/config")
     assert response.status_code == 200
 
     config = response.json()

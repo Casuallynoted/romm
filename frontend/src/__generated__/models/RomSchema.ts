@@ -1,7 +1,6 @@
 /* generated using openapi-typescript-codegen -- do no edit */
 /* istanbul ignore file */
 /* tslint:disable */
-/* eslint-disable */
 
 import type { RomIGDBMetadata } from "./RomIGDBMetadata";
 import type { RomMobyMetadata } from "./RomMobyMetadata";
@@ -47,6 +46,5 @@ export type RomSchema = {
   created_at: string;
   updated_at: string;
   rom_user?: RomUserSchema | null;
-  sibling_roms?: Array<RomSchema>;
   readonly sort_comparator: string;
 };

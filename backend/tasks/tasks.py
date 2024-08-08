@@ -1,12 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Any
 
-import httpx
+import requests
 from exceptions.task_exceptions import SchedulerException
 from handler.redis_handler import low_prio_queue
 from logger.logger import log
 from rq_scheduler import Scheduler
-from utils.context import ctx_httpx_client
 
 tasks_scheduler = Scheduler(queue=low_prio_queue, connection=low_prio_queue.connection)
 
@@ -41,7 +39,8 @@ class PeriodicTask(ABC):
             return self.unschedule()
 
     @abstractmethod
-    async def run(self, *args: Any, **kwargs: Any) -> Any: ...
+    async def run(self):
+        pass
 
     def schedule(self):
         if not self.enabled:
@@ -84,12 +83,11 @@ class RemoteFilePullTask(PeriodicTask):
 
         log.info(f"Scheduled {self.description} started...")
 
-        httpx_client = ctx_httpx_client.get()
         try:
-            response = await httpx_client.get(self.url, timeout=120)
+            response = requests.get(self.url, timeout=120)
             response.raise_for_status()
             return response.content
-        except httpx.HTTPError as e:
+        except requests.exceptions.RequestException as e:
             log.error(f"Scheduled {self.description} failed", exc_info=True)
             log.error(e)
             return None
