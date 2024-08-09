@@ -20,6 +20,7 @@ from starlette.datastructures import URLPath
 from utils.router import APIRouter
 from handler.metadata.base_hander import (
     SWITCH_TITLEDB_REGEX,
+    SWITCH_PRODUCT_ID_REGEX,
     MetadataHandler,
 )
 
