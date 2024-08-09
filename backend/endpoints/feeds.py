@@ -18,7 +18,7 @@ from handler.database import db_platform_handler, db_rom_handler
 from models.rom import Rom
 from starlette.datastructures import URLPath
 from utils.router import APIRouter
-from handler.metadata.base_hander import (
+from .handler.metadata.base_hander import (
     SWITCH_TITLEDB_REGEX,
     MetadataHandler,
 )
@@ -134,18 +134,19 @@ async def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilF
 
     for file in files:
         # Extract the title ID from the file name
-        match = SWITCH_TITLEDB_REGEX.search(file.file_name)
-        if match:
-            title_name, _ = await metadata_handler._switch_titledb_format(match, file.name)
+        matchtitle = SWITCH_TITLEDB_REGEX.search(file.file_name)
+        matchproduct = SWITCH_PRODUCT_ID_REGEX.search(file.file_name)
+        if matchtitle:
+            title_name, _ = await metadata_handler._switch_titledb_format(matchtitle, file.name)
+            product_id, _ = await metadata_handler._switch_titledb_format(matchproduct, file.name)
             full_title = f"{file.name} - {title_name}"  # Append the title ID to the name
         else:
             full_title = file.name  # Use the original name if no title ID is found
 
         file_list.append(
             TinfoilFeedFileSchema(
-                url=f"../../roms/{file.id}/content/{file.file_name}" + full_title,
-                size=file.file_size_bytes,
-                title=full_title,  # Use the full title here
+                url=f"../../roms/{file.id}/content/{file.file_name}" + " " + product_id,
+                size=file.file_size_bytes
             )
         )
 
