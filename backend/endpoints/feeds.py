@@ -18,6 +18,10 @@ from handler.database import db_platform_handler, db_rom_handler
 from models.rom import Rom
 from starlette.datastructures import URLPath
 from utils.router import APIRouter
+from handler.metadata.base_hander import (
+    SWITCH_TITLEDB_REGEX,
+    MetadataHandler,
+)
 
 router = APIRouter()
 
@@ -102,7 +106,7 @@ def platforms_webrcade_feed(request: Request) -> WebrcadeFeedSchema:
     )
 
 @protected_route(router.get, "/tinfoil/feed", ["roms.read"])
-def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSchema:
+async def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSchema:
     """Get tinfoil custom index feed endpoint
     https://blawar.github.io/tinfoil/custom_index/
 
@@ -121,21 +125,29 @@ def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSch
             error="Nintendo Switch platform not found",
         )
 
-    # Correct indentation here
+    # Get the list of ROMs for the platform
     files: list[Rom] = db_rom_handler.get_roms(platform_id=switch.id)
 
     # Create the list of TinfoilFeedFileSchema objects
-    file_list = [
-        TinfoilFeedFileSchema(
-            url=str(
-                request.url_for(
-                    "get_rom_content", id=file.id, file_name=file.file_name
-                )
-            ).replace("http", "https", 1),  # Move the replace here
-            size=file.file_size_bytes,
+    file_list = []
+    metadata_handler = MetadataHandler()
+
+    for file in files:
+        # Extract the title ID from the file name
+        match = SWITCH_TITLEDB_REGEX.search(file.file_name)
+        if match:
+            title_name, _ = await metadata_handler._switch_titledb_format(match, file.name)
+            full_title = f"{file.name} - {title_name}"  # Append the title ID to the name
+        else:
+            full_title = file.name  # Use the original name if no title ID is found
+
+        file_list.append(
+            TinfoilFeedFileSchema(
+                url=f"../../roms/{file.id}/content/{file.file_name}",
+                size=file.file_size_bytes,
+                title=full_title,  # Use the full title here
+            )
         )
-        for file in files
-    ]
 
     return TinfoilFeedSchema(
         files=file_list,
