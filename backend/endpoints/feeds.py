@@ -21,7 +21,6 @@ from utils.router import APIRouter
 
 router = APIRouter()
 
-
 @protected_route(
     router.get,
     "/webrcade/feed",
@@ -102,7 +101,6 @@ def platforms_webrcade_feed(request: Request) -> WebrcadeFeedSchema:
         categories=categories,
     )
 
-
 @protected_route(router.get, "/tinfoil/feed", ["roms.read"])
 def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSchema:
     """Get tinfoil custom index feed endpoint
@@ -123,21 +121,24 @@ def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSch
             error="Nintendo Switch platform not found",
         )
 
+    # Correct indentation here
     files: list[Rom] = db_rom_handler.get_roms(platform_id=switch.id)
 
+    # Create the list of TinfoilFeedFileSchema objects
+    file_list = [
+        TinfoilFeedFileSchema(
+            url=str(
+                request.url_for(
+                    "get_rom_content", id=file.id, file_name=file.file_name
+                )
+            ).replace("http", "https", 1),  # Move the replace here
+            size=file.file_size_bytes,
+        )
+        for file in files
+    ]
+
     return TinfoilFeedSchema(
-        files=[
-            TinfoilFeedFileSchema(
-                url=str(
-                    request.url_for(
-                        "get_rom_content", id=file.id, file_name=file.file_name
-                    )
-                    return http_url.replace("http", "https", 1)
-                ),
-                size=file.file_size_bytes,
-            )
-            for file in files
-        ],
+        files=file_list,
         directories=[],
         success=TINFOIL_WELCOME_MESSAGE,
     )
