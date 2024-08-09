@@ -250,55 +250,67 @@ class IGDBBaseHandler(MetadataHandler):
 
         return res.json()
 
-    async def _search_rom(
-        self, search_term: str, platform_igdb_id: int, with_category: bool = False
-    ) -> dict | None:
-        if not platform_igdb_id:
-            return None
+async def _search_rom(
+    self, search_term: str, platform_igdb_id: int, with_category: bool = False
+) -> dict | None:
+    if not platform_igdb_id:
+        return None
 
-        search_term = uc(search_term)
-        category_filter: str = (
-            f"& (category={MAIN_GAME_CATEGORY} | category={EXPANDED_GAME_CATEGORY})"
-            if with_category
-            else ""
-        )
+    search_term = uc(search_term)
+    category_filter: str = (
+        f"& (category={MAIN_GAME_CATEGORY} | category={EXPANDED_GAME_CATEGORY})"
+        if with_category
+        else ""
+    )
 
-        def is_exact_match(rom: dict, search_term: str) -> bool:
-            return (
-                rom["name"].lower() == search_term.lower()
-                or rom["slug"].lower() == search_term.lower()
-                or (
-                    self._normalize_exact_match(rom["name"])
-                    == self._normalize_exact_match(search_term)
-                )
+    # Define a function to check for exact matches
+    def is_exact_match(rom: dict, search_term: str) -> bool:
+        return (
+            rom["name"].lower() == search_term.lower()
+            or rom["slug"].lower() == search_term.lower()
+            or (
+                self._normalize_exact_match(rom["name"])
+                == self._normalize_exact_match(search_term)
             )
-
-        roms = await self._request(
-            self.games_endpoint,
-            data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}] {category_filter};',
         )
-        for rom in roms:
-            # Return early if an exact match is found.
+
+    # First search for exact matches using the games endpoint
+    roms = await self._request(
+        self.games_endpoint,
+        data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}] {category_filter};',
+    )
+
+    # Check for exact matches in the initial search results
+    for rom in roms:
+        if is_exact_match(rom, search_term):
+            return rom
+
+    # If no exact match was found, proceed with a broader search
+    roms_expanded = await self._request(
+        self.search_endpoint,
+        data=f'fields {",".join(self.search_fields)}; where game.platforms=[{platform_igdb_id}] & (name ~ *"{search_term}"* | alternative_name ~ *"{search_term}"*);',
+    )
+
+    # Check for exact matches in the expanded search results
+    if roms_expanded:
+        for rom in roms_expanded:
             if is_exact_match(rom, search_term):
                 return rom
 
-        roms_expanded = await self._request(
-            self.search_endpoint,
-            data=f'fields {",".join(self.search_fields)}; where game.platforms=[{platform_igdb_id}] & (name ~ *"{search_term}"* | alternative_name ~ *"{search_term}"*);',
+        # If still no exact match, get additional details
+        extra_roms = await self._request(
+            self.games_endpoint,
+            f'fields {",".join(self.games_fields)}; where id={roms_expanded[0]["game"]["id"]};',
         )
-        if roms_expanded:
-            extra_roms = await self._request(
-                self.games_endpoint,
-                f'fields {",".join(self.games_fields)}; where id={roms_expanded[0]["game"]["id"]};',
-            )
-            for rom in extra_roms:
-                # Return early if an exact match is found.
-                if is_exact_match(rom, search_term):
-                    return rom
+        for rom in extra_roms:
+            if is_exact_match(rom, search_term):
+                return rom
 
-            roms.extend(extra_roms)
+        roms.extend(extra_roms)
 
-        return roms[0] if roms else None
+    # Return the first rom if no exact match found
+    return roms[0] if roms else None
+
 
     @check_twitch_token
     async def get_platform(self, slug: str) -> IGDBPlatform:
