@@ -265,20 +265,23 @@ class IGDBBaseHandler(MetadataHandler):
 
         # Define a function to check for exact matches
         def is_exact_match(rom: dict, search_term: str) -> bool:
+            # Use .get() to avoid KeyError
+            slug = rom.get("slug", "")
             return (
                 rom["name"].lower() == search_term.lower()
-                or rom["slug"].lower() == search_term.lower()
-                or (
-                    self._normalize_exact_match(rom["name"])
-                    == self._normalize_exact_match(search_term)
-                )
+              or slug.lower() == search_term.lower()
+               or (
+                  self._normalize_exact_match(rom["name"])
+                 == self._normalize_exact_match(search_term)
             )
+          )
 
         # First search for exact matches using the games endpoint
         roms = await self._request(
             self.games_endpoint,
          data=f'search "{search_term}"; fields {",".join(self.games_fields)}; where platforms=[{platform_igdb_id}] {category_filter};',
         )
+        print("Roms from games endpoint:", roms)  # Debugging line
 
         # Check for exact matches in the initial search results
         for rom in roms:
