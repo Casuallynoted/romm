@@ -140,13 +140,14 @@ async def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilF
         if matchtitle:
             title_name, _ = await metadata_handler._switch_titledb_format(matchtitle, file.name)
             product_id, _ = await metadata_handler._switch_titledb_format(matchproduct, file.name)
-            full_title = f"{file.name} - {title_name}"  # Append the title ID to the name
+            full_title = f"{title_name}"  # Append the title ID to the name
+            full_product = f"{product_id}"
         else:
             full_title = file.name  # Use the original name if no title ID is found
 
         file_list.append(
             TinfoilFeedFileSchema(
-                url=f"../../roms/{file.id}/content/{file.file_name}" + "#" + title_name + " [" + product_id + "].nsp",
+                url=f"../../roms/{file.id}/content/{file.file_name}" + "#" + full_title + " [" + full_product + "].nsp",
                 size=file.file_size_bytes
             )
         )
