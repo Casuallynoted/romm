@@ -145,7 +145,7 @@ async def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilF
 
         file_list.append(
             TinfoilFeedFileSchema(
-                url=f"../../roms/{file.id}/content/{file.file_name}" + " " + product_id,
+                url=f"../../roms/{file.id}/content/{file.file_name}" + "#" + title_name + " [" + product_id + "].nsp",
                 size=file.file_size_bytes
             )
         )
