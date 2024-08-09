@@ -144,6 +144,7 @@ async def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilF
             full_product = f"{product_id}"
         else:
             full_title = file.name  # Use the original name if no title ID is found
+            full_product = ""
 
         file_list.append(
             TinfoilFeedFileSchema(
