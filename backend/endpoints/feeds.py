@@ -1,3 +1,4 @@
+import re
 from config import (
     DISABLE_DOWNLOAD_ENDPOINT_AUTH,
     TINFOIL_WELCOME_MESSAGE
