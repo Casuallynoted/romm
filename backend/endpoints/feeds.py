@@ -1,4 +1,7 @@
-from config import DISABLE_DOWNLOAD_ENDPOINT_AUTH
+from config import (
+    DISABLE_DOWNLOAD_ENDPOINT_AUTH,
+    TINFOIL_WELCOME_MESSAGE
+)
 from decorators.auth import protected_route
 from endpoints.responses.feeds import (
     WEBRCADE_SLUG_TO_TYPE_MAP,
@@ -129,6 +132,7 @@ def tinfoil_index_feed(request: Request, slug: str = "switch") -> TinfoilFeedSch
                     request.url_for(
                         "get_rom_content", id=file.id, file_name=file.file_name
                     )
+                    return http_url.replace("http", "https", 1)
                 ),
                 size=file.file_size_bytes,
             )
