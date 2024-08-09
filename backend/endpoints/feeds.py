@@ -18,7 +18,7 @@ from handler.database import db_platform_handler, db_rom_handler
 from models.rom import Rom
 from starlette.datastructures import URLPath
 from utils.router import APIRouter
-from .handler.metadata.base_hander import (
+from handler.metadata.base_hander import (
     SWITCH_TITLEDB_REGEX,
     MetadataHandler,
 )
