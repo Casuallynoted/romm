@@ -1,3 +1,4 @@
+
 from starlette.datastructures import URLPath
 from utils.router import APIRouter
 from handler.metadata.base_hander import (
@@ -57,4 +58,8 @@ async def _switch_productid_format(
                 size=file.file_size_bytes
             )
         )
-)
+    return TinfoilFeedSchema(
+        files=file_list,
+        directories=[],
+        success=TINFOIL_WELCOME_MESSAGE,
+    )
