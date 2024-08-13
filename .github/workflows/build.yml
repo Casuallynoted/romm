@@ -35,28 +35,26 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Generate Docker metadata
         id: meta
         uses: docker/metadata-action@v4
         with:
           images: |
-            name=casuallynoted/romm
-            name=ghcr.io/casuallynoted/romm
+            name=Casuallynoted/romm
+            name=ghcr.io/Casuallynoted/romm
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
           labels: |
             org.opencontainers.image.version={{version}}
-            org.opencontainers.image.title="casuallynoted/romm"
+            org.opencontainers.image.title="Casuallynoted/romm"
             org.opencontainers.image.description="RomM (ROM Manager) allows you to scan, enrich, and browse your game collection with a clean and responsive interface. With support for multiple platforms, various naming schemes and custom tags, RomM is a must-have for anyone who plays on emulators."
             org.opencontainers.image.licenses="GPL-3.0"
-
       - name: Set version
         run: |
           sed -i 's/<version>/${{ steps.meta.outputs.version }}/' backend/__version__.py
-
       - name: Build image
         uses: docker/build-push-action@v4
         with:
