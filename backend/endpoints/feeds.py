@@ -57,3 +57,4 @@ async def _switch_productid_format(
                 size=file.file_size_bytes
             )
         )
+)
